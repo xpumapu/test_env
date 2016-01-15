@@ -1,0 +1,163 @@
+#!/bin/sh -a
+
+#\
+exec expect "$0" "$@"
+package require tdom
+
+source lib-wifi.tcl
+
+;# parse script arguments
+
+puts "name $argv0"
+puts " parameters $argc"
+
+if {$argc > 0} {
+	puts [lindex $argv 0]
+	
+
+} else {
+	puts "ERROR: missing parametr"
+	exit 1
+}
+
+set test_console test-localhost
+
+
+proc get_phy {dev iface} {
+	set index_path "/sys/class/net/$iface/phy80211/index"
+	return "phy[exec ssh $dev cat $index_path]"
+}
+
+proc exec_shell_cmd {cmd} {
+	return [exec $::env(SHELL) -c $cmd]
+}
+
+proc exec_cmd {dev cmd} {
+	return [exec ssh $dev $cmd] 
+}
+
+proc ns_exec {ns cmd} {
+	return [exec_cmd $::test_console "ip netns exec $ns $cmd"]
+}
+
+proc ns_get_mac {ns iface} {
+	return [ns_exec $ns "cat /sys/class/net/${iface}/address"]
+}
+
+
+proc ns_add_sta {ns iface base_name index} {
+	set base_mac [ns_get_mac $ns $iface]
+	set new_mac [string replace $base_mac 13 13 1]
+	if {$index > 9} {
+		set new_mac [string replace $new_mac 15 16 $index]
+	} else {
+		set new_mac [string replace $new_mac 15 16 "0$index"]
+	}
+	set new_iface "$base_name$index"
+	ns_exec $ns "iw $iface interface add $new_iface type managed"
+
+	set cur_mac [ns_get_mac $ns $new_iface]
+	if {$cur_mac == $base_mac} {
+		ns_exec $ns "ip link set $new_iface address $new_mac"
+		return $new_mac
+	} else {
+		return cur_mac
+	}
+}
+
+proc ns_run_bk {ns} {
+	return [exec ssh -n -f $::test_console ip netns exec $ns vi &]
+}
+
+proc ns_get_ifaces {ns} {
+	return [ns_exec $ns "ls /sys/class/net/"]
+}
+
+set netns_name "test-ns"
+set main_iface wlan0
+set sta_iface_base "sta"
+set iface "${sta_iface_base}0"
+set sta_mac_list {}
+
+;# check if main_iface is still root netns
+set ifaces [get_ifaces $test_console]
+puts "ifaces $ifaces"
+
+if {[string match "*${main_iface}*" [join $ifaces]]} {
+	set phy [get_phy $test_console $main_iface]
+	puts "Test console $main_iface $phy"
+}
+
+set cmd_out [exec_shell_cmd "ip netns"]
+puts "cmd_out $cmd_out"
+foreach ns $cmd_out {
+	puts "netns: $ns"
+}
+
+;# check if netns exist
+puts "if [string match "*${netns_name}*" $cmd_out]"
+if {[string match "*${netns_name}*" $cmd_out] == 0} {
+	;# if not create it
+	puts [exec_cmd $test_console "ip netns add $netns_name"]
+}
+
+set cmd_out [exec_shell_cmd "ip netns"]
+foreach ns $cmd_out {
+	puts "netns: $ns"
+}
+
+;# check if main_iface is already in netns
+set ns_ifaces [ns_get_ifaces $netns_name]
+puts "$netns_name ifaces: [join $ns_ifaces]"
+
+if {[string match "*${main_iface}*" [join $ns_ifaces]] == 0} {
+	puts "not here"
+	;# run process in netns
+	ns_run_bk $netns_name
+
+	;# get netns process id
+	set ns_pid [exec_cmd $test_console "ip netns pids $netns_name"]
+	puts "ns_pid $ns_pid"
+
+	if {$ns_pid != "" && [info exist phy]} {
+		;# move iface to netns
+		puts [exec_cmd $test_console "iw $phy set netns $ns_pid"]
+	}
+}
+
+set wpa_config "/home/xpumapu/ath10k/config/wpa_supplicant-sh-5.conf"
+set supp_conf_fd [open "/home/xpumapu/ath10k/config/wpa_supplicant-sh-5.conf" "r"]
+set supp_conf [read $supp_conf_fd]
+puts $supp_conf
+close $supp_conf_fd 
+
+;# start shell on test_console
+spawn -noecho ssh -t $test_console sh
+set sh_id $spawn_id
+expect $prompt {}
+
+;# start_supp $test_console $sh_id $supp_conf $main_iface
+
+set cmd "wpa_supplicant -i $main_iface -c $wpa_config -e $supp_entr_file -B"
+ns_exec $netns_name $cmd
+
+
+exit 0
+
+puts [ns_exec $netns_name "ip link"]
+
+
+puts [ns_exec $netns_name "iw $iface del"]
+
+set idx 1
+
+puts "mac: [ns_get_mac $netns_name $main_iface]"
+
+lappend sta_mac_list [ns_add_sta $netns_name $main_iface $sta_iface_base $idx]
+
+puts "mas list $sta_mac_list"
+
+
+
+
+
