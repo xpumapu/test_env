@@ -1,0 +1,80 @@
+#!/usr/bin/tclsh
+
+package require Tclx
+
+set log_file "/tmp/deam.log"
+
+proc get_time {} {
+	return [clock format [clock seconds]]
+}
+
+proc shutdown {} {
+	;#whatever cleanup you need to do
+	set fd [open shut.log a+]
+	fconfigure $fd -buffering none
+	puts $fd "[get_time]: Main process shutdown"
+	close $fd
+	exit
+}
+
+proc dispatcher {fd} {
+	# do your work here!  this sample just opens a log file and writes to it.
+
+	signal unblock {QUIT TERM}
+	signal trap    QUIT shutdown
+	signal trap TERM mysigterm
+
+	puts $fd "[get_time]: dispatcher pid [pid]"
+	while 1 {
+		puts $fd "[get_time]: dispacher while"
+		sleep 5
+	}
+}
+
+proc mysigterm {} {
+	set fd [open term.log a+]
+	fconfigure $fd -buffering none
+	puts $fd "[get_time]: sigterm"
+	close $fd
+}
+
+proc daemonize {fd} {
+	close stdin
+	close stdout
+	close stderr
+	set pro [fork]
+	puts $fd "[get_time]: fork $pro"
+	if {$pro} {
+		exit 0
+	}
+	puts $fd "[get_time]: id [id process group] pid [pid]"
+	id process group set
+
+	set pro [fork]
+	puts $fd "[get_time]: fork2 $pro"
+	if {$pro} {
+		exit -1
+	}
+	set sd [open /dev/null r]
+	set sd [open /dev/null w]
+	set sd [open /dev/null w]
+	cd /
+	umask 022
+	return [id process]
+}
+
+file delete $log_file
+set fd [open $log_file a+]
+fconfigure $fd -buffering none
+puts $fd "[get_time]: startup [pid]"
+
+set deam_id [daemonize $fd]
+puts $fd "[get_time]: deam_id $deam_id"
+
+signal ignore  SIGHUP
+signal unblock {QUIT TERM}
+signal trap    QUIT shutdown
+signal trap TERM mysigterm
+puts $fd "[get_time]: dispatcher start"
+dispatcher $fd
+
