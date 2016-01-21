@@ -2,12 +2,37 @@
 
 package require Tclx
 
-set ns [socket 127.0.0.1 7707]
 
-set idx 1
-	puts "n [gets $ns line]"
-	puts "line: $line"
-	after 1000
+
+proc sigint_handler {sock} {
+	puts "Bye ..."
+	puts $sock "Bye..."
+	exit 0
+
+}
+
+
+
+
+set ns [socket 127.0.0.1 7707]
+fconfigure $ns -buffering line
+
+signal trap SIGINT [list sigint_handler $ns]
+
+puts $ns "test 1"
+
+while {1} {
+
+	if {[eof $ns] || [catch {gets $ns line}]} {
+		puts "error"
+		break
+	} else {
+		puts "$line"
+	}
+
+}
+
+after 500
 
 close $ns
 

@@ -2,10 +2,23 @@
 
 package require Tclx
 
-set log_file "/tmp/deam.log"
+source lib/lib-daem.tcl
 
+set log_file "/tmp/daem.log"
+
+
+
+
+;# gets curent date and time
 proc get_time {} {
 	return [clock format [clock seconds]]
+}
+
+;# log message to file
+;# dfd - debug file descriptor, open for writing
+;# msg - text message
+proc log {dfd msg} {
+	puts $dfd "[get_time]: $msg"
 }
 
 proc shutdown {} {
@@ -17,23 +30,39 @@ proc shutdown {} {
 	exit
 }
 
-proc server {chan addr port} {
-	fconfigure $chan -buffering line ;# NOT -blocking 0 (see below!)
-	puts $chan "test server tcl"
-	flush $chan
-	close $chan
+proc read_data {chan fd} {
+	log $fd "read data"
+	if {[eof $chan] || [catch {gets $chan line}]} {
+		log $fd "closing socket $chan"
+		close $chan
+	} else {
+		log $fd "received: $line"
+		puts $chan $line
+		set ls_out [exec ls]
+		puts $chan $ls_out
+	}
 }
 
-proc dispatcher {fd} {
-	puts $fd "[get_time]: dispatcher pid [pid]"
-	set ns [socket -server server 7707]
-	puts $fd "[get_time]: dispatcher ns $ns"
-	while {1} {
-		;#set stat [gets $ns line]
-		;#puts $fd "[get_time]: dispacher while, stat $stat line: $line"
-		puts $fd "[get_time]: dispacher while"
-		vwait forever
-	}
+;# server function processing each new connected client
+proc server_process {fd chan addr port} {
+	fconfigure $chan -buffering line -blocking 0
+	log $fd "server process: chan $chan addr $addr port $port"
+
+	;# setup read/write callbacks
+	fileevent $chan readable [list read_data $chan $fd]
+}
+
+;# register server function and wait forever
+proc server_register {fd} {
+	set ns [socket -server [list server_process $fd] 7707]
+	log $fd "server registered, waiting for clients..."
+	vwait forever
+}
+
+proc daemon_process {fd} {
+	log $fd "daemon pid [pid]"
+
+	server_register $fd
 }
 
 proc mysigterm {} {
@@ -43,20 +72,17 @@ proc mysigterm {} {
 	close $fd
 }
 
-proc daemonize {fd} {
+proc start_daemon {fd} {
 	close stdin
 	close stdout
 	close stderr
 	set pro [fork]
-	puts $fd "[get_time]: fork $pro"
 	if {$pro} {
 		exit 0
 	}
-	puts $fd "[get_time]: id [id process group] pid [pid]"
 	id process group set
 
 	set pro [fork]
-	puts $fd "[get_time]: fork2 $pro"
 	if {$pro} {
 		exit -1
 	}
@@ -68,18 +94,41 @@ proc daemonize {fd} {
 	return [id process]
 }
 
+
+;#
+;# start here
+;#
+
+;# check if pidfile exists
+
+
+
+
+
+;# delete log file
 file delete $log_file
+
+;# open and configure file for new logs
 set fd [open $log_file a+]
 fconfigure $fd -buffering none
-puts $fd "[get_time]: startup [pid]"
+log  $fd "startup [pid]"
 
-set deam_id [daemonize $fd]
-puts $fd "[get_time]: deam_id $deam_id"
+;# start daemon process
+set daem_id [start_daemon $fd]
+log $fd "start daemon pid $daem_id"
 
+;# create pidfile
+set pid_fd [open "$pidfile_dir/$argv0.pid" w]
+puts $pid_fd "$daem_id"
+close $pid_fd
+
+
+;# configure signals
 signal ignore  SIGHUP
 signal unblock {QUIT TERM}
 signal trap    QUIT shutdown
 signal trap TERM mysigterm
-puts $fd "[get_time]: dispatcher start"
-dispatcher $fd
+
+;# start daemon processing
+daemon_process $fd
 

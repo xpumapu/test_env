@@ -418,7 +418,7 @@ proc clean_up_iface {dev iface} {
 	exec_cmd $dev "ifconfig $iface down"
 }
 
-proc logtime {text} {
+proc logtime_ex {text} {
 	puts "[timestamp -format %X]-$text"
 }
 
