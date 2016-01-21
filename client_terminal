@@ -1,0 +1,14 @@
+#!/usr/bin/tclsh
+
+package require Tclx
+
+set ns [socket 127.0.0.1 7707]
+
+set idx 1
+	puts "n [gets $ns line]"
+	puts "line: $line"
+	after 1000
+
+close $ns
+
+

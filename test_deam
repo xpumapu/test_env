@@ -17,17 +17,22 @@ proc shutdown {} {
 	exit
 }
 
+proc server {chan addr port} {
+	fconfigure $chan -buffering line ;# NOT -blocking 0 (see below!)
+	puts $chan "test server tcl"
+	flush $chan
+	close $chan
+}
+
 proc dispatcher {fd} {
-	# do your work here!  this sample just opens a log file and writes to it.
-
-	signal unblock {QUIT TERM}
-	signal trap    QUIT shutdown
-	signal trap TERM mysigterm
-
 	puts $fd "[get_time]: dispatcher pid [pid]"
-	while 1 {
+	set ns [socket -server server 7707]
+	puts $fd "[get_time]: dispatcher ns $ns"
+	while {1} {
+		;#set stat [gets $ns line]
+		;#puts $fd "[get_time]: dispacher while, stat $stat line: $line"
 		puts $fd "[get_time]: dispacher while"
-		sleep 5
+		vwait forever
 	}
 }
 
