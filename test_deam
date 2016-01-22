@@ -5,7 +5,7 @@ package require Tclx
 source lib/lib-daem.tcl
 
 set log_file "/tmp/daem.log"
-
+set pidfile_path "$pidfile_dir/[file tail $argv0].pid"
 
 
 
@@ -100,10 +100,10 @@ proc start_daemon {fd} {
 ;#
 
 ;# check if pidfile exists
-
-
-
-
+if {[file exists $pidfile_path]} {
+	puts "error: $$pidfile_path already exists"
+	exit -1
+}
 
 ;# delete log file
 file delete $log_file
@@ -118,7 +118,7 @@ set daem_id [start_daemon $fd]
 log $fd "start daemon pid $daem_id"
 
 ;# create pidfile
-set pid_fd [open "$pidfile_dir/$argv0.pid" w]
+set pid_fd [open $pidfile_path w]
 puts $pid_fd "$daem_id"
 close $pid_fd
 
