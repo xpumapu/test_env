@@ -1,0 +1,21 @@
+#!/usr/bin/tclsh
+
+set prompt "# "
+
+
+puts "START"
+puts "give your command"
+
+
+while {1} {
+	puts -nonewline $prompt
+	flush stdout
+	gets stdin line
+	if {[string match "*quit*" $line]} {
+		break
+	}
+
+}
+
+puts "line $line, [llength $line] [string length $line]"
+puts "END"
