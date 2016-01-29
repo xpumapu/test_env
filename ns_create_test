@@ -1,0 +1,105 @@
+#!/bin/sh -a
+
+#\
+exec expect "$0" "$@"
+
+source lib/lib-ns.tcl
+source lib/lib-ls.tcl
+
+;# parse script arguments
+
+puts "name $argv0"
+puts " parameters $argc"
+
+if {$argc > 0} {
+	puts [lindex $argv 0]
+} else {
+	puts "ERROR: missing parametr"
+}
+
+
+
+set test_console test-localhost
+
+
+proc test1 {} {
+	set ns_name "test_ns"
+	puts "NS list: \n[ns_list]"
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	puts "NS list: \n[ns_list]"
+	ns_del $ns_name
+}
+
+proc test2 {} {
+	set ns_name "test_ns"
+	
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+	puts [ns_exec $ns_io "ls -la"]
+	ns_del $ns_name
+}
+
+;# move iface from root ns to created ns
+proc test3 {} {
+	set ns_name "test_ns"
+	set iface "wlan0"
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+	set cmd_out [ns_exec $ns_io "ip a"]
+	set ns_pid [ns_get_shell_pid $ns_io]
+	set iface_phy [ls_get_phy $iface]
+	puts "NS:\n$cmd_out"
+	puts "NS shell PID $ns_pid"
+	puts "Root NS:\n[exec ip a]"
+	puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+
+	puts [ns_move_iface $iface_phy $ns_pid]
+
+	after 10
+	puts [ns_exec $ns_io "ip a"]
+
+	ns_del $ns_name
+}
+
+
+proc test4 {} {
+	set ns_name "test_ns"
+	set iface "wlan0"
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+	set cmd_out [ns_exec $ns_io "ip a"]
+	set ns_pid [ns_get_shell_pid $ns_io]
+	set iface_phy [ls_get_phy $iface]
+	puts "NS:\n$cmd_out"
+	puts "NS shell PID $ns_pid"
+	puts "Root NS:\n[exec ip a]"
+	puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+
+	puts [ns_move_iface $iface_phy $ns_pid]
+
+	after 10
+	puts [ns_exec $ns_io "ip a"]
+	puts [ns_exec $ns_io "ip link set $iface up"]
+	after 100
+	puts [ns_exec $ns_io "ip a"]
+
+
+	ns_del $ns_name
+}
+;# main
+
+test4

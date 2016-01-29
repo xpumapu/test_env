@@ -1,0 +1,28 @@
+#!/bin/sh -a
+
+#\
+exec expect "$0" "$@"
+package require tdom
+
+source lib/lib-ls.tcl
+set test_console test-localhost
+
+;# parse script arguments
+
+puts "name $argv0"
+puts " parameters $argc"
+
+if {$argc > 0} {
+	puts [lindex $argv 0]
+} else {
+	puts "ERROR: missing parametr"
+}
+
+
+set ifaces [ls_get_ifaces]
+puts "ifaces $ifaces"
+
+foreach iface $ifaces {
+	puts "Iface: $iface, MAC: [ls_get_mac $iface]"
+}
+
