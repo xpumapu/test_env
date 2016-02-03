@@ -2,10 +2,12 @@
 
 set prompt "# "
 
-
-puts "START"
-puts "give your command"
-
+proc start_cli {prompt} {
+	puts "START"
+	puts "give your command"
+	puts -nonewline $prompt
+	flush stdout
+}
 
 proc parse_line {line} {
 	set parcmd [dict create]
@@ -22,10 +24,7 @@ proc parse_line {line} {
 	return $parcmd
 }
 
-
-while {1} {
-	puts -nonewline $prompt
-	flush stdout
+proc read_line {prompt} {
 	gets stdin line
 	set parcmd [parse_line [string trimright [string tolower $line] " \r\n"]]
 
@@ -44,6 +43,18 @@ while {1} {
 			puts "PUT: [dict get $parcmd args]"
 		}
 	}
-
+	;# print prompt
+	puts -nonewline $prompt
+	flush stdout
 }
+
+
+
+;# main
+start_cli $prompt
+
+fileevent stdin readable [list read_line $prompt]
+
+
+vwait forever
 
