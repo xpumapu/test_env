@@ -3,6 +3,8 @@
 package require Tclx
 
 source lib/lib-daem.tcl
+source lib/lib-cli.tcl
+source lib/lib-ls.tcl
 
 set log_file "/tmp/daem.log"
 set pidfile_path "$pidfile_dir/[file tail $argv0].pid"
@@ -30,32 +32,82 @@ proc shutdown {} {
 	exit
 }
 
-proc read_data {chan fd} {
-	log $fd "read data"
-	if {[eof $chan] || [catch {gets $chan line}]} {
-		log $fd "closing socket $chan"
-		close $chan
+proc handle_cmd_get {args ns dfd} {
+	set firstarg [lindex $args 0]
+
+	switch $firstarg {
+		"ifaces" {
+			log $dfd "get ifaces"
+			set l_ifaces [ls_get_ifaces]
+			puts $ns "ifaces: $l_ifaces"
+		}
+		"quit" {
+			log $dfd "quiting..."
+		}
+		"get" {
+			log $dfd "get: $args"
+		}
+		"pid" {
+			log $dfd "pid:[pid]"
+		}
+		"test" {
+			log $dfd "test: $args"
+		}
+	}
+}
+
+proc handle_cmd {cmd args ns dfd} {
+
+	switch $cmd {
+		"none" {
+			log $dfd "none"
+		}
+		"get" {
+			log $dfd "get: $args"
+			handle_cmd_get $args $ns $dfd
+		}
+		"run" {
+			log $dfd "run: $args"
+		}
+		"test" {
+			log $dfd "test: $args"
+		}
+	}
+}
+
+proc read_data {ns fd} {
+	log $fd "[lindex [info level 0] 0]"
+
+	set status [catch {gets $ns line} result]
+
+	if {$status != 0} {
+		log $fd "error reading $ns: $result, closing sock..."
+		close $ns
+	} elseif {$result >= 0} {
+		log $fd "received: >$line<"
+		set parcmd [parse_line $line]
+		handle_cmd [dict get $parcmd cmd] [dict get $parcmd args] $ns $fd
+	} elseif {[eof $ns] == 1} {
+		log $fd "sock $ns: eof, closing sock..."
+		close $ns
 	} else {
-		log $fd "received: $line"
-		puts $chan $line
-		set ls_out [exec ls]
-		puts $chan $ls_out
+		log $fd "impossible"
 	}
 }
 
 ;# server function processing each new connected client
-proc server_process {fd chan addr port} {
-	fconfigure $chan -buffering line -blocking 0
-	log $fd "server process: chan $chan addr $addr port $port"
+proc server_process {fd ns addr port} {
+	fconfigure $ns -buffering line -blocking 0
+	log $fd "server process: chan $ns addr $addr port $port"
 
 	;# setup read/write callbacks
-	fileevent $chan readable [list read_data $chan $fd]
+	fileevent $ns readable [list read_data $ns $fd]
 }
 
 ;# register server function and wait forever
 proc server_register {fd} {
 	set ns [socket -server [list server_process $fd] 7707]
-	log $fd "server registered, waiting for clients..."
+	log $fd "server registered sock $ns, waiting for clients..."
 	vwait forever
 }
 
