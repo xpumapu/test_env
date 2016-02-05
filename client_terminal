@@ -2,38 +2,89 @@
 
 package require Tclx
 
+source lib/lib-cli.tcl
 
+proc print_prompt {prompt} {
+	puts -nonewline $prompt
+	flush stdout
+}
 
-proc sigint_handler {sock} {
-	puts "Bye ..."
-	puts $sock "Bye..."
+proc start_cli {prompt} {
+	puts "Starting test env CLI..."
+	puts "give your CLI commands:"
+	print_prompt $prompt
+}
+
+proc read_line {prompt ns} {
+	gets stdin line
+	set parcmd [parse_line $line]
+
+	switch [dict get $parcmd cmd] {
+		"none" {
+			puts "NONE:"
+		}
+		"quit" {
+			puts "quiting..."
+			puts $ns "quit"
+			close $ns
+			exit 0
+		}
+		"get" {
+			puts "GET: [dict get $parcmd args]"
+			puts $ns "get"
+		}
+		"put" {
+			puts "PUT: [dict get $parcmd args]"
+			puts $ns "put"
+		}
+		"send" {
+			set args [dict get $parcmd args]
+			puts "SEND: >$args<"
+			if {[llength $args] > 0} {
+				puts $ns $args
+			}
+		}
+	}
+	;# print prompt
+	print_prompt $prompt
+}
+
+proc get_line_from_server {ns prompt} {
+	if {[eof $ns] || [catch {gets $ns line}]} {
+		puts "error reading from server"
+	} else {
+		puts "\r$line"
+		print_prompt $prompt
+	}
+}
+
+proc sigint_handler {ns} {
+	puts "Closing test terminal CLI..."
+	puts $ns "client sigint"
+	close $ns
 	exit 0
 
 }
 
 
 
+;# main
+start_cli $prompt
 
+;# network socket
 set ns [socket 127.0.0.1 7707]
-fconfigure $ns -buffering line
 
+fconfigure $ns -buffering line -blocking 0
+
+;# initial handlers
 signal trap SIGINT [list sigint_handler $ns]
+fileevent $ns readable [list get_line_from_server $ns $prompt]
+fileevent stdin readable [list read_line $prompt $ns]
 
-puts $ns "test 1"
 
-while {1} {
 
-	if {[eof $ns] || [catch {gets $ns line}]} {
-		puts "error"
-		break
-	} else {
-		puts "$line"
-	}
+;# loop
+vwait forever
 
-}
-
-after 500
-
-close $ns
 
 
