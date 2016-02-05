@@ -81,6 +81,7 @@ proc test4 {} {
 	;# open pipe to ns
 	puts "NS list: \n[ns_list]"
 	set ns_io [ns_open_shell $ns_name]
+
 	set cmd_out [ns_exec $ns_io "ip a"]
 	set ns_pid [ns_get_shell_pid $ns_io]
 	set iface_phy [ls_get_phy $iface]
@@ -96,10 +97,53 @@ proc test4 {} {
 	puts [ns_exec $ns_io "ip link set $iface up"]
 	after 100
 	puts [ns_exec $ns_io "ip a"]
+	puts [ns_exec $ns_io "iw $iface scan"]
 
 
 	ns_del $ns_name
 }
+
+
+proc test5 {} {
+	set ns_name "test_ns"
+	set iface "wlan0"
+	set supp_conf_path "/home/xpumapu/ath10k/config/wpa_supplicant-sh-2.conf"
+	set supp_path "wpa_supplicant"
+	set supp_params "-Dnl80211 -c $supp_conf_path -i$iface -B"
+
+
+
+
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+
+	set cmd_out [ns_exec $ns_io "ip a"]
+	set ns_pid [ns_get_shell_pid $ns_io]
+	set iface_phy [ls_get_phy $iface]
+	puts "NS:\n$cmd_out"
+	puts "NS shell PID $ns_pid"
+	puts "Root NS:\n[exec ip a]"
+	puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+
+	puts [ns_move_iface $iface_phy $ns_pid]
+
+	after 10
+	puts [ns_exec $ns_io "ip a"]
+
+	;# start supplicant
+	puts [ns_exec $ns_io "$supp_path $supp_params"]
+
+
+
+	return 0
+	ns_del $ns_name
+}
+
+
 ;# main
 
-test4
+test5
