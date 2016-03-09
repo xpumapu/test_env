@@ -5,6 +5,8 @@ exec expect "$0" "$@"
 
 source lib/lib-ns.tcl
 source lib/lib-ls.tcl
+source lib/lib-iw.tcl
+source lib/lib-wpa_cli.tcl
 
 ;# parse script arguments
 
@@ -12,9 +14,10 @@ puts "name $argv0"
 puts " parameters $argc"
 
 if {$argc > 0} {
-	puts [lindex $argv 0]
+	set test_no [lindex $argv 0]
+	puts "Run test: $test_no"
 } else {
-	puts "ERROR: missing parametr"
+	puts "missing parametr"
 }
 
 
@@ -34,7 +37,7 @@ proc test1 {} {
 
 proc test2 {} {
 	set ns_name "test_ns"
-	
+
 	if {[ns_check_exist $ns_name] == 0} {
 		ns_create $ns_name
 	}
@@ -71,7 +74,7 @@ proc test3 {} {
 	ns_del $ns_name
 }
 
-
+;# perform scan in ns
 proc test4 {} {
 	set ns_name "test_ns"
 	set iface "wlan0"
@@ -107,7 +110,7 @@ proc test4 {} {
 proc test5 {} {
 	set ns_name "test_ns"
 	set iface "wlan0"
-	set supp_conf_path "/home/xpumapu/ath10k/config/wpa_supplicant-sh-2.conf"
+	set supp_conf_path "/home/xpumapu/ath10k/config/wpa_supplicant-sh.conf"
 	set supp_path "wpa_supplicant"
 	set supp_params "-Dnl80211 -c $supp_conf_path -i$iface -B"
 
@@ -123,19 +126,35 @@ proc test5 {} {
 
 	set cmd_out [ns_exec $ns_io "ip a"]
 	set ns_pid [ns_get_shell_pid $ns_io]
-	set iface_phy [ls_get_phy $iface]
+
+	if {[ls_check_iface_exist $iface] == 1} {
+		set iface_phy [ls_get_phy $iface]
+		puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+		puts [ns_move_iface $iface_phy $ns_pid]
+	} elseif {[ns_check_iface_exist $ns_io $iface] == 0} {
+		puts "error: iface $iface does not exist in ns $ns_name"
+		return -1
+	}
+	;# iface already in ns
 	puts "NS:\n$cmd_out"
 	puts "NS shell PID $ns_pid"
 	puts "Root NS:\n[exec ip a]"
-	puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
-
-	puts [ns_move_iface $iface_phy $ns_pid]
 
 	after 10
 	puts [ns_exec $ns_io "ip a"]
 
-	;# start supplicant
-	puts [ns_exec $ns_io "$supp_path $supp_params"]
+	;# start supplicant keep to have only one supplicant running
+	;# check if supplicant is running
+	set supp_pid [ns_find_pid $ns_io "$supp_path $supp_params"]
+	if {$supp_pid != 0} {
+		;# supplicant already running
+		puts "supplicant alredy running: $supp_pid"
+	} else {
+		;# supplicant not running, start it
+		puts [ns_exec $ns_io "$supp_path $supp_params"]
+	}
+	after 1000
+	puts "supplicant pid [ns_find_pid $ns_io "$supp_path $supp_params"]"
 
 
 
@@ -144,6 +163,416 @@ proc test5 {} {
 }
 
 
+proc test6 {} {
+	set ns_name "test_ns"
+	set iface "wlan0"
+
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+
+	set cmd_out [ns_exec $ns_io "ip a"]
+	set ns_pid [ns_get_shell_pid $ns_io]
+
+	puts "$cmd_out"
+	puts "\n\n"
+	puts "ns ifaces: [ns_get_ifaces $ns_io]"
+	puts "$iface exist :[ns_check_iface_exist $ns_io $iface] in $ns_name"
+}
+
+
+proc test7 {} {
+	set ns_name "ns-sta1"
+	set iface "wlan1"
+
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+	puts "ns_io $ns_io"
+
+	set cmd_out [ns_exec $ns_io "ip a"]
+
+	puts "$cmd_out"
+	puts "\n\n"
+	puts "ns ifaces: [ns_get_ifaces $ns_io]"
+	puts "$iface exist :[ns_check_iface_exist $ns_io $iface] in $ns_name"
+	set iw_info [ns_exec $ns_io "iw $iface info"]
+	puts "iw_info $iw_info"
+
+	set iw_info [iw_get_info $iw_info]
+	puts "\n\n$iw_info"
+	if {[dict exist $iw_info chanwidth]} {
+		puts "chanwidth [dict get $iw_info chanwidth]"
+	}
+
+	set iw_link [ns_exec $ns_io "iw $iface link"]
+	puts "iw_link $iw_link"
+	set iw_link [iw_get_link $iw_link]
+	puts "\n$iw_link\n"
+}
+
+
+proc test8 {} {
+	set ns_name "test_ns"
+	set iface "wlan0"
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+
+	set cmd_out [ns_exec $ns_io "ip a"]
+	puts "before NS:\n $cmd_out"
+	set ns_pid [ns_get_shell_pid $ns_io]
+
+	if {[ls_check_iface_exist $iface] == 1} {
+		set iface_phy [ls_get_phy $iface]
+		puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+		puts [ns_move_iface $iface_phy $ns_pid]
+	} elseif {[ns_check_iface_exist $ns_io $iface] == 0} {
+		puts "error: iface $iface does not exist in ns $ns_name"
+		return -1
+	}
+	;# iface already in ns
+	set cmd_out [ns_exec $ns_io "ip a"]
+	puts "NS:\n$cmd_out"
+
+	set ns_iface_phy [ns_get_phy $ns_io $iface]
+	puts "ns_iface_phy $ns_iface_phy"
+	puts "[ns_remove_iface $ns_io $ns_iface_phy]"
+
+	;# after
+	set cmd_out [ns_exec $ns_io "ip a"]
+	puts "after NS:\n$cmd_out"
+
+}
+
+
+
+proc test9 {} {
+	set ns_name "test_ns"
+	set iface "wlan0"
+	set supp_conf_path "/home/xpumapu/ath10k/config/wpa_supplicant-sh.conf"
+	set supp_path "wpa_supplicant"
+	set supp_params "-Dnl80211 -c $supp_conf_path -i$iface -B"
+
+
+
+
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+
+	set cmd_out [ns_exec $ns_io "ip a"]
+	set ns_pid [ns_get_shell_pid $ns_io]
+
+	if {[ls_check_iface_exist $iface] == 1} {
+		set iface_phy [ls_get_phy $iface]
+		puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+		puts [ns_move_iface $iface_phy $ns_pid]
+	} elseif {[ns_check_iface_exist $ns_io $iface] == 0} {
+		puts "error: iface $iface does not exist in ns $ns_name"
+		return -1
+	}
+	;# iface in ns
+	puts "NS:\n$cmd_out"
+	puts "NS shell PID $ns_pid"
+	puts "Root NS:\n[exec ip a]"
+
+	;# start supplicant keep to have only one supplicant running
+	;# check if supplicant is running
+	set supp_pid [ns_find_pid $ns_io "$supp_path $supp_params"]
+	if {$supp_pid != 0} {
+		;# supplicant already running
+		puts "supplicant alredy running: $supp_pid"
+	} else {
+		;# supplicant not running, start it
+		puts [ns_exec $ns_io "$supp_path $supp_params"]
+		after 1000
+		puts "supplicant pid [ns_find_pid $ns_io "$supp_path $supp_params"]"
+	}
+
+	if {[ns_exec $ns_io "wpa_cli -i$iface scan"] != "OK"} {
+		puts "\n\n SCAN ERROR"
+	}
+	after 1000
+	set scan_res [wpa_cli_get_scan_res [ns_exec $ns_io "wpa_cli -i$iface scan_res"]]
+	puts "\n\nScan res $iface $scan_res"
+	puts "\nscan_res keys [dict keys $scan_res] size [dict size $scan_res] item keys [dict keys [dict get $scan_res 0]]"
+
+	puts "\nScan res:"
+	foreach item [dict keys $scan_res] {
+		puts "SSID: [dict get $scan_res $item ssid] bssid: [dict get $scan_res $item bssid]"
+	}
+
+	return 0
+	ns_del $ns_name
+}
+
+
+proc test10 {} {
+;# iface up/ down and iface status
+	set ns_name "test_ns"
+	set iface "wlan0"
+	set supp_conf_path "/home/xpumapu/ath10k/config/wpa_supplicant-sh.conf"
+	set supp_path "wpa_supplicant"
+	set supp_params "-Dnl80211 -c $supp_conf_path -i$iface -B"
+
+
+
+
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+
+	set cmd_out [ns_exec $ns_io "ip a"]
+	set ns_pid [ns_get_shell_pid $ns_io]
+
+	if {[ls_check_iface_exist $iface] == 1} {
+		set iface_phy [ls_get_phy $iface]
+		puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+		puts [ns_move_iface $iface_phy $ns_pid]
+	} elseif {[ns_check_iface_exist $ns_io $iface] == 0} {
+		puts "error: iface $iface does not exist in ns $ns_name"
+		return -1
+	}
+	;# iface in ns
+	puts "NS:\n$cmd_out"
+	puts "NS shell PID $ns_pid"
+	puts "Root NS:\n[exec ip a]"
+
+
+	puts "\nIface $iface state [ns_get_iface_opstate $ns_io $iface]"
+
+	;# down
+	ns_ifconfig $ns_io $iface down
+	puts "\n[ns_exec $ns_io "ip a"]"
+
+	puts "\nIface $iface state [ns_get_iface_opstate $ns_io $iface]"
+
+	;# up
+	ns_ifconfig $ns_io $iface up
+	puts "\n[ns_exec $ns_io "ip a"]"
+
+	puts "\nIface $iface state [ns_get_iface_opstate $ns_io $iface]"
+}
+
+
+proc test11 {} {
+	set ns_name "ns-sta1"
+	set iface "wlan1"
+	set supp_conf_path "/home/xpumapu/ath10k/config/wpa_supplicant-sh.conf"
+	set supp_path "wpa_supplicant"
+	set supp_params "-Dnl80211 -c $supp_conf_path -i$iface -B"
+
+
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+
+	set cmd_out [ns_exec $ns_io "ip a"]
+	set ns_pid [ns_get_shell_pid $ns_io]
+
+	if {[ls_check_iface_exist $iface] == 1} {
+		set iface_phy [ls_get_phy $iface]
+		puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+		puts [ns_move_iface $iface_phy $ns_pid]
+	} elseif {[ns_check_iface_exist $ns_io $iface] == 0} {
+		puts "error: iface $iface does not exist in ns $ns_name"
+		return -1
+	}
+	;# iface in ns
+	puts "NS:\n$cmd_out"
+	puts "NS shell PID $ns_pid"
+	puts "Root NS:\n[exec ip a]"
+
+	if {[ns_exec $ns_io "wpa_cli -i$iface scan"] != "OK"} {
+		puts "\n\n SCAN ERROR"
+	}
+	after 1000
+	set scan_res [wpa_cli_get_scan_res [ns_exec $ns_io "wpa_cli -i$iface scan_res"]]
+	puts "\n\nScan res $iface $scan_res"
+	puts "\nres:[read $ns_io]"
+	return 0
+	ns_del $ns_name
+}
+
+
+proc test12 {} {
+	set ns_name "test_ns"
+	set iface "wlan0"
+	set supp_conf_path "/home/xpumapu/ath10k/config/wpa_supplicant-sh.conf"
+	set supp_path "wpa_supplicant"
+	set supp_params "-Dnl80211 -c $supp_conf_path -i$iface -B"
+
+
+
+
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+
+	set cmd_out [ns_exec $ns_io "ip a"]
+	set ns_pid [ns_get_shell_pid $ns_io]
+
+	if {[ls_check_iface_exist $iface] == 1} {
+		set iface_phy [ls_get_phy $iface]
+		puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+		puts [ns_move_iface $iface_phy $ns_pid]
+	} elseif {[ns_check_iface_exist $ns_io $iface] == 0} {
+		puts "error: iface $iface does not exist in ns $ns_name"
+		return -1
+	}
+	;# iface in ns
+	puts "NS:\n$cmd_out"
+	puts "NS shell PID $ns_pid"
+	puts "Root NS:\n[exec ip a]"
+
+	;# start supplicant keep to have only one supplicant running
+	;# check if supplicant is running
+	set supp_pid [ns_find_pid $ns_io "$supp_path $supp_params"]
+	if {$supp_pid != 0} {
+		;# supplicant already running
+		puts "supplicant alredy running: $supp_pid"
+	} else {
+		;# supplicant not running, start it
+		puts [ns_exec $ns_io "$supp_path $supp_params"]
+		after 1000
+		puts "supplicant pid [ns_find_pid $ns_io "$supp_path $supp_params"]"
+	}
+
+	if {[ns_exec $ns_io "wpa_cli -i$iface scan"] != "OK"} {
+		puts "\n\n SCAN ERROR"
+	}
+	after 1000
+	set scan_res [wpa_cli_get_scan_res [ns_exec $ns_io "wpa_cli -i$iface scan_res"]]
+
+	puts "\nScan res:"
+	foreach item [dict keys $scan_res] {
+		puts "SSID: [dict get $scan_res $item ssid] bssid: [dict get $scan_res $item bssid]"
+	}
+
+	;# list wpa_supplicant network list
+	puts "\nsupplicant network list\n[ns_exec $ns_io "wpa_cli -i $iface list_n"]"
+
+	set opstate [ns_get_iface_opstate $ns_io $iface]
+
+	if {$opstate == "down"} {
+		ns_exec $ns_io "wpa_cli -i $iface enable_network 0"
+	}
+	while {$opstate == "down"} {
+		set opstate [ns_get_iface_opstate $ns_io $iface]
+		puts "opstate: $opstate"
+		after 100
+	}
+
+	set iw_info [iw_get_info [ns_exec $ns_io "iw $iface info"]]
+	puts "\n\n$iw_info"
+
+	set iw_link [iw_get_link [ns_exec $ns_io "iw $iface link"]]
+	puts "\n$iw_link\n"
+
+	puts "IP: [ns_get_ip $ns_io $iface]"
+
+
+	return 0
+	ns_del $ns_name
+}
 ;# main
 
-test5
+
+proc test13 {} {
+	set ns_name "test_ns"
+	set iface "wlan0"
+	set moni "snif0"
+
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+
+	set cmd_out [ns_exec $ns_io "ip a"]
+	set ns_pid [ns_get_shell_pid $ns_io]
+
+	if {[ls_check_iface_exist $iface] == 1} {
+		set iface_phy [ls_get_phy $iface]
+		puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+		puts [ns_move_iface $iface_phy $ns_pid]
+	} elseif {[ns_check_iface_exist $ns_io $iface] == 0} {
+		puts "error: iface $iface does not exist in ns $ns_name"
+		return -1
+	}
+
+	after 10
+	puts [ns_exec $ns_io "ip a"]
+
+	set iw_info [iw_get_info [ns_exec $ns_io "iw $moni info"]]
+	if {[dict exist $iw_info freq]} {
+		set freq [dict get $iw_info freq]
+	}
+
+
+	set channel_list [list 1 2 3 4 5 6 7 8 9 10 11]
+	set utilization [dict create]
+	while {1} {
+		foreach chan $channel_list {
+			ns_exec $ns_io "iw $moni set channel $chan HT20"
+			set iw_info [iw_get_info [ns_exec $ns_io "iw $moni info"]]
+			if {[dict exist $iw_info freq]} {
+				set freq [dict get $iw_info freq]
+			}
+
+			set survey [iw_get_survey [ns_exec $ns_io "iw $iface survey dump"]]
+			set busy1 [dict get $survey $freq busy_time]
+			set activ1 [dict get $survey $freq activ_time]
+			set tx1 [dict get $survey $freq tx_time]
+
+			after 500
+
+			set survey [iw_get_survey [ns_exec $ns_io "iw $iface survey dump"]]
+			set busy2 [dict get $survey $freq busy_time]
+			set activ2 [dict get $survey $freq activ_time]
+			set tx2 [dict get $survey $freq tx_time]
+			set tx [expr $tx2 - $tx1]
+			set a [expr [expr $busy2 - $busy1] - $tx]
+			set b [expr [expr $activ2 - $activ1] - $tx]
+			set by [format %#.2f [expr $a/[format "%f" $b] * 100]]
+			dict set utilization $chan freq $freq
+			dict set utilization $chan util $by 
+		}
+
+		set log "\x1b\[5;1f"
+		foreach ch [dict keys $utilization] {
+			append log "freq: [dict get $utilization $ch freq] busy: [dict get $utilization $ch util]\n"
+		}
+
+		append log "\x1b\[J"
+		puts "\x1b\[1;1f\x1b\[J"
+		puts "$log"
+		flush stdout
+	}
+}
+
+
+test${test_no}
