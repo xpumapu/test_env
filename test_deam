@@ -5,6 +5,7 @@ package require Tclx
 source lib/lib-daem.tcl
 source lib/lib-cli.tcl
 source lib/lib-ls.tcl
+source lib/lib-ns.tcl
 
 set log_file "/tmp/daem.log"
 set pidfile_path "$pidfile_dir/[file tail $argv0].pid"
@@ -37,9 +38,32 @@ proc handle_cmd_get {args ns dfd} {
 
 	switch $firstarg {
 		"ifaces" {
-			log $dfd "get ifaces"
 			set l_ifaces [ls_get_ifaces]
+			log $dfd "ifaces: $l_ifaces"
 			puts $ns "ifaces: $l_ifaces"
+		}
+		"mac" {
+			set l_iface [lindex $args 1]
+			set l_mac [ls_get_mac $l_iface]
+			log $dfd "$l_iface: $l_mac"
+			puts $ns "$l_iface: $l_mac"
+
+		}
+		"netns" {
+			log $dfd "netns [llength $args]"
+			if {[llength $args] == 1} {
+				log $dfd "netns indide"
+				set l_netns_list [split [ns_list] "\n"]
+				log $dfd "netns: $l_netns_list"
+				puts $ns "netns: $l_netns_list"
+			} elseif {[llength $args] == 3} {
+				set subcmd [lindex $args 1]
+				if {$subcmd == "ifaces"} {
+					set ns_name [lindex $args 2]
+					log $dfd "netns: $ns_name ifaces:"
+					puts $ns "netns: $ns_name ifaces:"
+				}
+			}
 		}
 		"quit" {
 			log $dfd "quiting..."
