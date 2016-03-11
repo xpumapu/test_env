@@ -10,8 +10,8 @@ source lib/lib-wpa_cli.tcl
 
 ;# parse script arguments
 
-puts "name $argv0"
-puts " parameters $argc"
+;#puts "name $argv0"
+;#puts " parameters $argc"
 
 if {$argc > 0} {
 	set test_no [lindex $argv 0]
@@ -24,15 +24,26 @@ if {$argc > 0} {
 
 set test_console test-localhost
 
+proc log_test {str} {
+	puts "\n#####################################"
+	puts "TEST: $str"
+	puts "#####################################\n"
+}
 
 proc test1 {} {
-	set ns_name "test_ns"
-	puts "NS list: \n[ns_list]"
+;# Create and delete net ns
+	log_test "[lindex [info level 0] 0]"
+
+	set ns_name "test1_ns"
+	puts "NS list before: \n[ns_list]"
 	if {[ns_check_exist $ns_name] == 0} {
+		puts "Create NS: $ns_name"
 		ns_create $ns_name
 	}
-	puts "NS list: \n[ns_list]"
+	puts "NS list after: \n[ns_list]"
 	ns_del $ns_name
+	puts "Delete NS: $ns_name"
+	puts "NS list at the end: \n[ns_list]"
 }
 
 proc test2 {} {
@@ -575,4 +586,79 @@ proc test13 {} {
 }
 
 
+proc test14 {} {
+;# survey calculation exaple
+	set ns_name "test_ns"
+	set iface "wlan0"
+	set moni "snif0"
+
+	if {[ns_check_exist $ns_name] == 0} {
+		ns_create $ns_name
+	}
+	;# open pipe to ns
+	puts "NS list: \n[ns_list]"
+	set ns_io [ns_open_shell $ns_name]
+
+	set cmd_out [ns_exec $ns_io "ip a"]
+	set ns_pid [ns_get_shell_pid $ns_io]
+
+	if {[ls_check_iface_exist $iface] == 1} {
+		set iface_phy [ls_get_phy $iface]
+		puts "$iface: $iface_phy  mac: [ls_get_mac $iface]"
+		puts [ns_move_iface $iface_phy $ns_pid]
+	} elseif {[ns_check_iface_exist $ns_io $iface] == 0} {
+		puts "error: iface $iface does not exist in ns $ns_name"
+		return -1
+	}
+
+	after 10
+	puts [ns_exec $ns_io "ip a"]
+
+	set iw_info [iw_get_info [ns_exec $ns_io "iw $moni info"]]
+	if {[dict exist $iw_info freq]} {
+		set freq [dict get $iw_info freq]
+	}
+
+
+	set channel_list [list 1 2 3 4 5 6 7 8 9 10 11]
+	set utilization [dict create]
+	while {1} {
+		foreach chan $channel_list {
+			ns_exec $ns_io "iw $moni set channel $chan HT20"
+			set iw_info [iw_get_info [ns_exec $ns_io "iw $moni info"]]
+			if {[dict exist $iw_info freq]} {
+				set freq [dict get $iw_info freq]
+			}
+
+			set survey1 [iw_get_survey [ns_exec $ns_io "iw $iface survey dump"]]
+
+			set log "\x1b\[5;1f"
+			foreach ch [dict keys $utilization] {
+				append log "chan: $ch ([dict get $utilization $ch freq]) busy: [dict get $utilization $ch util] active: [dict get $utilization $ch active]\n"
+			}
+
+			append log "\x1b\[J"
+			puts "\x1b\[1;1f\x1b\[J"
+			puts "$log"
+			flush stdout
+
+			after 500
+
+			set survey2 [iw_get_survey [ns_exec $ns_io "iw $iface survey dump"]]
+			set sbusy [iw_calc_busy $freq $survey1 $survey2]
+			dict set utilization $chan freq $freq
+			dict set utilization $chan util [dict get $sbusy busy]
+			dict set utilization $chan active [dict get $sbusy active]
+		}
+
+	}
+}
+
+
+
+
 test${test_no}
+
+
+
+
