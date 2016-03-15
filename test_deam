@@ -10,7 +10,10 @@ source lib/lib-ns.tcl
 set log_file "/tmp/daem.log"
 set pidfile_path "$pidfile_dir/[file tail $argv0].pid"
 
+;# global
+set global_app_p [dict create]
 
+set debug 1
 
 ;# gets curent date and time
 proc get_time {} {
@@ -21,20 +24,46 @@ proc get_time {} {
 ;# dfd - debug file descriptor, open for writing
 ;# msg - text message
 proc log {dfd msg} {
+	global debug
 	puts $dfd "[get_time]: $msg"
+	if {$debug == 1} {
+		puts "[get_time]: $msg"
+	}
 }
 
 proc shutdown {} {
-	;#whatever cleanup you need to do
-	set fd [open shut.log a+]
-	fconfigure $fd -buffering none
-	puts $fd "[get_time]: Main process shutdown"
-	close $fd
-	exit
+	global global_app_p
+	global pidfile_path
+
+	set dfd [dict get $global_app_p log_fd]
+	log $dfd "Shutting down..."
+
+	if {[dict exists $global_app_p net_sock]} {
+		set ns [dict get $global_app_p net_sock]
+		log $dfd "Closing client socket: $ns"
+		close $ns
+	}
+	if {[dict exists $global_app_p server_sock]} {
+		set serv_sock [dict get $global_app_p server_sock]
+		log $dfd "Closing server socket: $serv_sock"
+		close $serv_sock
+	}
+	if {[file exists $pidfile_path]} {
+		log $dfd "Delete file: $pidfile_path"
+		file delete $pidfile_path
+	}
+	log $dfd "Closing log file: $dfd"
+	close $dfd
+	exit 0
 }
 
-proc handle_cmd_get {args ns dfd} {
+proc handle_cmd_get {args gap} {
+	upvar #0 $gap global_app_p
+	set dfd [dict get $global_app_p log_fd]
+	set ns [dict get $global_app_p net_sock]
 	set firstarg [lindex $args 0]
+
+	puts "handle_cmd_get global_app_p $global_app_p"
 
 	switch $firstarg {
 		"ifaces" {
@@ -52,16 +81,24 @@ proc handle_cmd_get {args ns dfd} {
 		"netns" {
 			log $dfd "netns [llength $args]"
 			if {[llength $args] == 1} {
-				log $dfd "netns indide"
+				set netns_p [dict create]
+				log $dfd "netns inside"
 				set l_netns_list [split [ns_list] "\n"]
 				log $dfd "netns: $l_netns_list"
 				puts $ns "netns: $l_netns_list"
+				foreach ns_name $l_netns_list {
+					set ns_fd [ns_open_shell $ns_name]
+					dict set netns_p $ns_name $ns_fd
+				}
+				dict set global_app_p netns_p $netns_p
 			} elseif {[llength $args] == 3} {
 				set subcmd [lindex $args 1]
 				if {$subcmd == "ifaces"} {
 					set ns_name [lindex $args 2]
-					log $dfd "netns: $ns_name ifaces:"
-					puts $ns "netns: $ns_name ifaces:"
+					set ns_fd [dict get $global_app_p netns_p $ns_name]
+					set ns_ifaces [ns_get_ifaces $ns_fd]
+					log $dfd "netns: $ns_name ifaces: $ns_ifaces"
+					puts $ns "netns: $ns_name ifaces: $ns_ifaces"
 				}
 			}
 		}
@@ -80,7 +117,9 @@ proc handle_cmd_get {args ns dfd} {
 	}
 }
 
-proc handle_cmd {cmd args ns dfd} {
+proc handle_cmd {cmd args gap} {
+	upvar #0 $gap global_app_p
+	set dfd [dict get $global_app_p log_fd]
 
 	switch $cmd {
 		"none" {
@@ -88,7 +127,7 @@ proc handle_cmd {cmd args ns dfd} {
 		}
 		"get" {
 			log $dfd "get: $args"
-			handle_cmd_get $args $ns $dfd
+			handle_cmd_get $args global_app_p
 		}
 		"run" {
 			log $dfd "run: $args"
@@ -99,20 +138,24 @@ proc handle_cmd {cmd args ns dfd} {
 	}
 }
 
-proc read_data {ns fd} {
-	log $fd "[lindex [info level 0] 0]"
+proc read_data {gap} {
+	upvar #0 $gap global_app_p
+	set fd [dict get $global_app_p log_fd]
+	set ns [dict get $global_app_p net_sock]
 
 	set status [catch {gets $ns line} result]
 
 	if {$status != 0} {
 		log $fd "error reading $ns: $result, closing sock..."
+		set global_app_p [dict remove $global_app_p net_sock]
 		close $ns
 	} elseif {$result >= 0} {
-		log $fd "received: >$line<"
+		log $fd "[lindex [info level 0] 0]: >$line<"
 		set parcmd [parse_line $line]
-		handle_cmd [dict get $parcmd cmd] [dict get $parcmd args] $ns $fd
+		handle_cmd [dict get $parcmd cmd] [dict get $parcmd args] global_app_p
 	} elseif {[eof $ns] == 1} {
 		log $fd "sock $ns: eof, closing sock..."
+		set global_app_p [dict remove $global_app_p net_sock]
 		close $ns
 	} else {
 		log $fd "impossible"
@@ -120,28 +163,38 @@ proc read_data {ns fd} {
 }
 
 ;# server function processing each new connected client
-proc server_process {fd ns addr port} {
+proc server_process {gap ns addr port} {
+	upvar #0 $gap global_app_p
 	fconfigure $ns -buffering line -blocking 0
-	log $fd "server process: chan $ns addr $addr port $port"
+
+	log [dict get $global_app_p log_fd] "server process: chan $ns addr $addr port $port"
+	dict set global_app_p net_sock $ns
 
 	;# setup read/write callbacks
-	fileevent $ns readable [list read_data $ns $fd]
+	fileevent $ns readable [list read_data global_app_p]
 }
 
 ;# register server function and wait forever
-proc server_register {fd} {
-	set ns [socket -server [list server_process $fd] 7707]
+proc server_register {gap} {
+	upvar #0 $gap global_app_p
+	set fd [dict get $global_app_p log_fd]
+	log $fd "server_register "
+	set ns [socket -server [list server_process global_app_p] 7707]
 	log $fd "server registered sock $ns, waiting for clients..."
+	dict set global_app_p server_sock $ns
 	vwait forever
 }
 
 proc daemon_process {fd} {
+	global global_app_p
+	dict set global_app_p log_fd $fd
 	log $fd "daemon pid [pid]"
 
-	server_register $fd
+	server_register global_app_p
 }
 
 proc mysigterm {} {
+	puts "sigterm"
 	set fd [open term.log a+]
 	fconfigure $fd -buffering none
 	puts $fd "[get_time]: sigterm"
@@ -190,7 +243,9 @@ fconfigure $fd -buffering none
 log  $fd "startup [pid]"
 
 ;# start daemon process
-set daem_id [start_daemon $fd]
+;# uncomment when daemon required
+#set daem_id [start_daemon $fd]
+set daem_id [pid]
 log $fd "start daemon pid $daem_id"
 
 ;# create pidfile
@@ -202,7 +257,7 @@ close $pid_fd
 ;# configure signals
 signal ignore  SIGHUP
 signal unblock {QUIT TERM}
-signal trap    QUIT shutdown
+signal trap QUIT shutdown
 signal trap TERM mysigterm
 
 ;# start daemon processing
