@@ -6,6 +6,7 @@ source lib/lib-daem.tcl
 source lib/lib-cli.tcl
 source lib/lib-ls.tcl
 source lib/lib-ns.tcl
+source daem_lib.tcl
 
 set log_file "/tmp/daem.log"
 set pidfile_path "$pidfile_dir/[file tail $argv0].pid"
@@ -63,8 +64,6 @@ proc handle_cmd_get {args gap} {
 	set ns [dict get $global_app_p net_sock]
 	set firstarg [lindex $args 0]
 
-	puts "handle_cmd_get global_app_p $global_app_p"
-
 	switch $firstarg {
 		"ifaces" {
 			set l_ifaces [ls_get_ifaces]
@@ -79,24 +78,17 @@ proc handle_cmd_get {args gap} {
 
 		}
 		"netns" {
-			log $dfd "netns [llength $args]"
 			if {[llength $args] == 1} {
-				set netns_p [dict create]
-				log $dfd "netns inside"
-				set l_netns_list [split [ns_list] "\n"]
-				log $dfd "netns: $l_netns_list"
-				puts $ns "netns: $l_netns_list"
-				foreach ns_name $l_netns_list {
-					set ns_fd [ns_open_shell $ns_name]
-					dict set netns_p $ns_name $ns_fd
-				}
-				dict set global_app_p netns_p $netns_p
+				set ns_list [check_netns_p global_app_p]
+				log $dfd "ns list: $ns_list"
+				puts $ns "ns list: $ns_list"
+				;# xxx
+				log $dfd "global: $global_app_p"
 			} elseif {[llength $args] == 3} {
 				set subcmd [lindex $args 1]
 				if {$subcmd == "ifaces"} {
 					set ns_name [lindex $args 2]
-					set ns_fd [dict get $global_app_p netns_p $ns_name]
-					set ns_ifaces [ns_get_ifaces $ns_fd]
+					set ns_ifaces [get_ns_ifaces $global_app_p $ns_name]
 					log $dfd "netns: $ns_name ifaces: $ns_ifaces"
 					puts $ns "netns: $ns_name ifaces: $ns_ifaces"
 				}
@@ -113,6 +105,54 @@ proc handle_cmd_get {args gap} {
 		}
 		"test" {
 			log $dfd "test: $args"
+		}
+	}
+}
+
+proc handle_cmd_netns {args gap} {
+	upvar #0 $gap global_app_p
+	set dfd [dict get $global_app_p log_fd]
+	set ns [dict get $global_app_p net_sock]
+
+	if {[llength $args] == 0} {
+		;# list all net ns's
+		set ns_list [check_netns_p global_app_p]
+		log $dfd "ns list: $ns_list"
+		puts $ns "ns list: $ns_list"
+		;# xxx
+		log $dfd "global: $global_app_p"
+		set firstarg "none"
+	} else {
+		set firstarg [lindex $args 0]
+	}
+
+	switch $firstarg {
+		"create" {
+			set new_ns [lindex $args 1]
+			ns_create $new_ns
+			set new_ns_fd [ns_open_shell $new_ns]
+			dict set global_app_p netns_p $new_ns $new_ns_fd
+			log $dfd "new netns: $new_ns"
+			puts $ns "new netns: $new_ns"
+		}
+		"del" {
+			set del_ns [lindex $args 1]
+			if {[ns_check_exist $del_ns] == 1 } {
+				ns_del $del_ns
+				log $dfd "del netns: $del_ns"
+				puts $ns "del netns: $del_ns"
+				log $dfd "before del global_app_p: $global_app_p"
+				dict set global_app_p netns_p [dict remove [dict get $global_app_p netns_p] $del_ns]
+				log $dfd "after del global_app_p: $global_app_p"
+			}
+		}
+		"ifaces" {
+			set ns_name [lindex $args 1]
+			set ns_ifaces [get_ns_ifaces $global_app_p $ns_name]
+			log $dfd "netns: $ns_name ifaces: $ns_ifaces"
+			puts $ns "netns: $ns_name ifaces: $ns_ifaces"
+		}
+		"none" {
 		}
 	}
 }
@@ -134,6 +174,10 @@ proc handle_cmd {cmd args gap} {
 		}
 		"test" {
 			log $dfd "test: $args"
+		}
+		"netns" {
+			log $dfd "netns: $args"
+			handle_cmd_netns $args global_app_p
 		}
 	}
 }
