@@ -67,8 +67,16 @@ proc handle_cmd_get {args gap} {
 	switch $firstarg {
 		"ifaces" {
 			set l_ifaces [ls_get_ifaces]
-			log $dfd "ifaces: $l_ifaces"
-			puts $ns "ifaces: $l_ifaces"
+			foreach l_iface $l_ifaces {
+				set l_type [ls_get_iface_type $l_iface]
+				if {$l_type == "wlan"} {
+					set l_phy [ls_get_phy $l_iface]
+					set l_iface "${l_iface}($l_phy)"
+				}
+				append l_log "$l_iface "
+			}
+			log $dfd "$l_log"
+			puts $ns "$l_log"
 		}
 		"mac" {
 			set l_iface [lindex $args 1]
@@ -79,7 +87,7 @@ proc handle_cmd_get {args gap} {
 		}
 		"netns" {
 			if {[llength $args] == 1} {
-				set ns_list [check_netns_p global_app_p]
+				set ns_list [get_netns_list global_app_p]
 				log $dfd "ns list: $ns_list"
 				puts $ns "ns list: $ns_list"
 				;# xxx
@@ -116,14 +124,19 @@ proc handle_cmd_netns {args gap} {
 
 	if {[llength $args] == 0} {
 		;# list all net ns's
-		set ns_list [check_netns_p global_app_p]
+		set ns_list [get_netns_list global_app_p]
 		log $dfd "ns list: $ns_list"
 		puts $ns "ns list: $ns_list"
 		;# xxx
 		log $dfd "global: $global_app_p"
 		set firstarg "none"
-	} else {
+		set secondarg "none"
+	} elseif {[llength $args] < 3} {
 		set firstarg [lindex $args 0]
+		set secondarg "none"
+	} elseif {[llength $args] == 3} {
+		set firstarg "none"
+		set secondarg [lindex $args 1]
 	}
 
 	switch $firstarg {
@@ -141,9 +154,7 @@ proc handle_cmd_netns {args gap} {
 				ns_del $del_ns
 				log $dfd "del netns: $del_ns"
 				puts $ns "del netns: $del_ns"
-				log $dfd "before del global_app_p: $global_app_p"
 				dict set global_app_p netns_p [dict remove [dict get $global_app_p netns_p] $del_ns]
-				log $dfd "after del global_app_p: $global_app_p"
 			}
 		}
 		"ifaces" {
@@ -155,6 +166,33 @@ proc handle_cmd_netns {args gap} {
 		"none" {
 		}
 	}
+
+	switch $secondarg {
+		"add" {
+			set ns_name [lindex $args 0]
+			set phy [lindex $args 2]
+			set netns_p [get_netns_p global_app_p]
+			if {[dict exists $netns_p $ns_name]} {
+				set ns_io [dict get $netns_p $ns_name]
+			} else {
+				set l_log "netns: $ns_name does not exists"
+				log $dfd "$l_log"
+				puts $ns "$l_log"
+				return
+			}
+			ns_move_iface $phy [ns_get_shell_pid $ns_io]
+			set l_log "$phy moved to $ns_name"
+			log $dfd "$l_log"
+			puts $ns "$l_log"
+		}
+		"remove" {
+		}
+		"up" {
+		}
+		"down" {
+		}
+	}
+
 }
 
 proc handle_cmd {cmd args gap} {
