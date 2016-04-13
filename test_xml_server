@@ -11,27 +11,21 @@ proc read_data {chan} {
 	if {[eof $chan] == 1} {
 		puts "DONE"
 		close $chan
-	}
-
-	set status [catch {gets $chan line} result] 
-	if {$status != 0} {
-		puts $chan "catch"
-		close $chan
-	} elseif {$result > 0} {
-		puts ">$line<"
-	} elseif {$result == 0} {
-		puts "OK..."
+	} else {
+		set data [read $chan]
 		puts $chan "OK"
-	} elseif {$result == -1} {
-		puts "XML Done"
-		close $chan
+		flush $chan
+		if { $data == "\n"} {
+			puts "enter"
+		}
+		puts "$data"
 	}
 
 }
 
 
 proc accept {chan addr port} {
-	fconfigure $chan -buffering line -blocking 0
+	fconfigure $chan -blocking 0
 	fileevent $chan readable [list read_data $chan] 
 }                                       
 
