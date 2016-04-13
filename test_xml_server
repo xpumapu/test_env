@@ -1,0 +1,41 @@
+#!/bin/sh -a
+
+#\
+exec expect "$0" "$@"
+package require tdom
+
+
+proc read_data {chan} {
+	puts "call read"
+	
+	if {[eof $chan] == 1} {
+		puts "DONE"
+		close $chan
+	}
+
+	set status [catch {gets $chan line} result] 
+	if {$status != 0} {
+		puts $chan "catch"
+		close $chan
+	} elseif {$result > 0} {
+		puts ">$line<"
+	} elseif {$result == 0} {
+		puts "OK..."
+		puts $chan "OK"
+	} elseif {$result == -1} {
+		puts "XML Done"
+		close $chan
+	}
+
+}
+
+
+proc accept {chan addr port} {
+	fconfigure $chan -buffering line -blocking 0
+	fileevent $chan readable [list read_data $chan] 
+}                                       
+
+socket -server accept 12345             
+vwait forever                           
+
+

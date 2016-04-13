@@ -1,0 +1,59 @@
+#!/bin/sh -a
+
+#\
+exec expect "$0" "$@"
+package require tdom
+
+
+
+;# parse script arguments
+
+puts "name $argv0"
+puts " parameters $argc"
+
+if {$argc > 0} {
+	puts [lindex $argv 0]
+	
+
+} else {
+	puts "ERROR: missing parametr"
+
+}
+
+set chan [socket 127.0.0.1 12345]         ;# Open the connection
+
+
+set doc [dom createDocument scan_report]
+puts "[dom setResultEncoding]"
+
+set root [$doc documentElement]
+$root setAttribute version 1.0
+
+set ap_node [$doc createElement ap]
+$root appendChild $ap_node
+
+set ssid_node [$doc createElement ssid]
+$ssid_node appendChild [$doc createTextNode testxxx]
+$ap_node appendChild $ssid_node
+
+
+set chan_node [$doc createElement chan]
+$chan_node appendChild [$doc createTextNode 36]
+$ap_node appendChild $chan_node
+
+
+set xml_data [$root asXML]
+
+puts [$root asXML]
+
+
+puts $chan $xml_data
+flush $chan
+puts "remote says [gets $chan]"
+close $chan
+
+
+
+
+
+
